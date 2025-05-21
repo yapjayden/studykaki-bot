@@ -68,10 +68,15 @@ async def handle_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             # Safely extract values
             nudity = output.get("nudity", {})
-            weapon = output.get("weapon", {}).get("prob", 0)
             gore = output.get("gore", {}).get("prob", 0)
             violence = output.get("violence", {}).get("prob", 0)
             selfharm = output.get("self-harm", {}).get("prob", 0)
+
+            # Weapon detection expanded
+            weapon_section = output.get("weapon", {})
+            weapon_classes = weapon_section.get("classes", {})
+            weapon_actions = weapon_section.get("firearm_action", {})
+            weapon_types = weapon_section.get("firearm_type", {})
 
             violations = []
             if (
@@ -84,7 +89,14 @@ async def handle_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ):
                 violations.append("nudity")
 
-            if weapon > 0.5: violations.append("weapon")
+            # Weapon checks
+            if any(score > 0.3 for score in weapon_classes.values()):
+                violations.append("weapon")
+            if any(score > 0.3 for score in weapon_actions.values()):
+                violations.append("weapon-action")
+            if any(score > 0.3 for score in weapon_types.values()):
+                violations.append("weapon-type")
+            
             if gore > 0.5: violations.append("gore")
             if violence > 0.5: violations.append("violence")
             if selfharm > 0.5: violations.append("self-harm")
