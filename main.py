@@ -1,6 +1,7 @@
 import os
 import logging
 import requests
+import json
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler,
@@ -48,7 +49,8 @@ async def handle_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             photo = message.photo[-1]
             file = await context.bot.get_file(photo.file_id)
-            file_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file.file_path}"  # ✅ Use full file URL
+            file_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file.file_path}"
+            print("File URL:", file_url)
 
             # Sightengine API
             params = {
@@ -59,9 +61,8 @@ async def handle_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
             }
             r = requests.get('https://api.sightengine.com/1.0/check.json', params=params)
             output = r.json()
-            # print("Sightengine response:", output)  # Optional debug log
+            print("Sightengine response:", json.dumps(output, indent=2))
 
-            # Scan for major violations
             violations = []
             if output.get("nudity", {}).get("raw", 0) > 0.5:
                 violations.append("nudity")
@@ -108,4 +109,3 @@ if __name__ == "__main__":
     import asyncio
     nest_asyncio.apply()
     asyncio.run(main())
-
