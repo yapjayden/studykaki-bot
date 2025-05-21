@@ -67,14 +67,23 @@ async def handle_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 raise ValueError("Sightengine failed")
 
             # Safely extract values
-            nudity = output.get("nudity", {}).get("raw", 0)
+            nudity = output.get("nudity", {})
             weapon = output.get("weapon", {}).get("prob", 0)
             gore = output.get("gore", {}).get("prob", 0)
             violence = output.get("violence", {}).get("prob", 0)
             selfharm = output.get("self-harm", {}).get("prob", 0)
 
             violations = []
-            if nudity > 0.5: violations.append("nudity")
+            if (
+                nudity.get("sexual_activity", 0) > 0.5 or
+                nudity.get("sexual_display", 0) > 0.5 or
+                nudity.get("erotica", 0) > 0.5 or
+                nudity.get("very_suggestive", 0) > 0.5 or
+                nudity.get("suggestive", 0) > 0.5 or
+                nudity.get("mildly_suggestive", 0) > 0.5
+            ):
+                violations.append("nudity")
+
             if weapon > 0.5: violations.append("weapon")
             if gore > 0.5: violations.append("gore")
             if violence > 0.5: violations.append("violence")
