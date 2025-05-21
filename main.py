@@ -49,7 +49,7 @@ async def handle_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             photo = message.photo[-1]
             file = await context.bot.get_file(photo.file_id)
-            file_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file.file_path}"
+            file_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file.file_path.lstrip('/')}"
             print("File URL:", file_url)
 
             # Sightengine API
