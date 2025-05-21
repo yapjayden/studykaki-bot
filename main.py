@@ -52,7 +52,6 @@ async def handle_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
             file_url = file.file_path
             print("File URL:", file_url)
 
-            # Sightengine API
             params = {
                 'url': file_url,
                 'models': 'nudity-2.1,weapon,recreational_drug,medical,offensive-2.0,scam,face-attributes,gore-2.0,qr-content,tobacco,violence,self-harm,gambling',
@@ -63,23 +62,29 @@ async def handle_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
             output = r.json()
             print("Sightengine response:", json.dumps(output, indent=2))
 
+            # Fail-safe: if status not success, exit
+            if output.get("status") != "success":
+                raise ValueError("Sightengine failed")
+
+            # Safely extract values
+            nudity = output.get("nudity", {}).get("raw", 0)
+            weapon = output.get("weapon", {}).get("prob", 0)
+            gore = output.get("gore", {}).get("prob", 0)
+            violence = output.get("violence", {}).get("prob", 0)
+            selfharm = output.get("self-harm", {}).get("prob", 0)
+
             violations = []
-            if output.get("nudity", {}).get("raw", 0) > 0.5:
-                violations.append("nudity")
-            if output.get("weapon", 0) > 0.5:
-                violations.append("weapon")
-            if output.get("gore", 0) > 0.5:
-                violations.append("gore")
-            if output.get("violence", 0) > 0.5:
-                violations.append("violence")
-            if output.get("self-harm", 0) > 0.5:
-                violations.append("self-harm")
+            if nudity > 0.5: violations.append("nudity")
+            if weapon > 0.5: violations.append("weapon")
+            if gore > 0.5: violations.append("gore")
+            if violence > 0.5: violations.append("violence")
+            if selfharm > 0.5: violations.append("self-harm")
 
             if violations:
                 await message.reply_text(f"🚫 Image blocked due to: {', '.join(violations)}")
                 return
 
-            # Post to channel
+            # Passed: send to channel
             await context.bot.send_photo(
                 chat_id=CHANNEL_ID,
                 photo=photo.file_id,
