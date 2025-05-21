@@ -8,24 +8,24 @@ from telegram.ext import (
 )
 from better_profanity import profanity
 
-# Load bot token from Railway environment variable
+# Environment variables
 BOT_TOKEN = os.environ["BOT_TOKEN"]
-CHANNEL_ID = "@studykakiSG"  # Replace with your actual channel username or chat ID
+CHANNEL_ID = "@studykakiSG"
 SIGHTENGINE_USER = os.environ["SIGHTENGINE_USER"]
 SIGHTENGINE_SECRET = os.environ["SIGHTENGINE_SECRET"]
 
-# Setup logging
+# Logging
 logging.basicConfig(level=logging.INFO)
 
-# Start command
+# /start handler
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Post your question!")
 
-# Handle both text and image questions
+# Text and Image Handler
 async def handle_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
 
-    # TEXT HANDLING
+    # TEXT
     if message.text:
         text = message.text.strip()
 
@@ -33,24 +33,24 @@ async def handle_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await message.reply_text("❌ Your question contains inappropriate content.")
             return
 
-        question_keywords = ["what", "why", "how", "when", "who", "where", "does", "is", "can", "should"]
-        if not text.endswith("?") and not any(word in text.lower() for word in question_keywords):
+        keywords = ["what", "why", "how", "when", "who", "where", "does", "is", "can", "should"]
+        if not text.endswith("?") and not any(word in text.lower() for word in keywords):
             await message.reply_text("🤖 Please submit a valid question.")
             return
 
         await context.bot.send_message(chat_id=CHANNEL_ID, text=f"📝 Anonymous Question:\n\n{text}")
         await message.reply_text("✅ Your question has been sent anonymously!")
 
-    # IMAGE HANDLING
+    # IMAGE
     elif message.photo:
         await message.reply_text("🔍 Scanning image for inappropriate content...")
 
         try:
             photo = message.photo[-1]
             file = await context.bot.get_file(photo.file_id)
-            file_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file.file_path}"
+            file_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file.file_path}"  # ✅ Use full file URL
 
-            # Sightengine NSFW + other content models
+            # Sightengine API
             params = {
                 'url': file_url,
                 'models': 'nudity-2.1,weapon,recreational_drug,medical,offensive-2.0,scam,face-attributes,gore-2.0,qr-content,tobacco,violence,self-harm,gambling',
@@ -59,8 +59,9 @@ async def handle_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
             }
             r = requests.get('https://api.sightengine.com/1.0/check.json', params=params)
             output = r.json()
+            # print("Sightengine response:", output)  # Optional debug log
 
-            # Check for violations
+            # Scan for major violations
             violations = []
             if output.get("nudity", {}).get("raw", 0) > 0.5:
                 violations.append("nudity")
@@ -77,6 +78,7 @@ async def handle_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await message.reply_text(f"🚫 Image blocked due to: {', '.join(violations)}")
                 return
 
+            # Post to channel
             await context.bot.send_photo(
                 chat_id=CHANNEL_ID,
                 photo=photo.file_id,
@@ -86,13 +88,12 @@ async def handle_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         except Exception as e:
             await message.reply_text("⚠️ Error scanning image. Please try again.")
-            print(e)
+            print("Error:", e)
 
     else:
         await message.reply_text("❌ Unsupported message type.")
 
-
-# Bot setup and run
+# Run bot
 async def main():
     profanity.load_censor_words()
     app = ApplicationBuilder().token(BOT_TOKEN).build()
@@ -107,3 +108,4 @@ if __name__ == "__main__":
     import asyncio
     nest_asyncio.apply()
     asyncio.run(main())
+
