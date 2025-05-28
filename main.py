@@ -2,34 +2,34 @@ import os
 import logging
 import requests
 import json
-from telegram import Update
+from uuid import uuid4
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler,
-    ContextTypes, filters
+    CallbackQueryHandler, ContextTypes, filters
 )
 from better_profanity import profanity
 
-# Environment variables
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 CHANNEL_ID = "@studykakiSG"
 SIGHTENGINE_USER = os.environ["SIGHTENGINE_USER"]
 SIGHTENGINE_SECRET = os.environ["SIGHTENGINE_SECRET"]
 
-# Logging
+# List your moderator Telegram user IDs here
+MODERATOR_IDS = [123456789, 987654321]  # Replace with actual IDs
+
+moderation_queue = {}
+
 logging.basicConfig(level=logging.INFO)
 
-# /start handler
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Post your question!")
 
-# Text and Image Handler
 async def handle_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
 
-    # TEXT
     if message.text:
         text = message.text.strip()
-
         if profanity.contains_profanity(text):
             await message.reply_text("❌ Your question contains inappropriate content.")
             return
@@ -39,94 +39,107 @@ async def handle_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await message.reply_text("🤖 Please submit a valid question.")
             return
 
-        await context.bot.send_message(chat_id=CHANNEL_ID, text=f"📝 Anonymous Question:\n\n{text}")
-        await message.reply_text("✅ Your question has been sent anonymously!")
+        question_id = str(uuid4())
+        moderation_queue[question_id] = {"text": text, "photo": None}
 
-    # IMAGE
+        keyboard = [
+            [
+                InlineKeyboardButton("✅ Approve", callback_data=f"approve:{question_id}"),
+                InlineKeyboardButton("❌ Reject", callback_data=f"reject:{question_id}")
+            ]
+        ]
+        markup = InlineKeyboardMarkup(keyboard)
+
+        for mod_id in MODERATOR_IDS:
+            await context.bot.send_message(chat_id=mod_id, text=f"New submission:\n\n{text}", reply_markup=markup)
+
+        await message.reply_text("🕒 Your question has been submitted for review!")
+
     elif message.photo:
-        await message.reply_text("🔍 Scanning image for inappropriate content...")
+        photo = message.photo[-1]
+        file = await context.bot.get_file(photo.file_id)
+        file_url = file.file_path
 
-        try:
-            photo = message.photo[-1]
-            file = await context.bot.get_file(photo.file_id)
-            file_url = file.file_path
-            print("File URL:", file_url)
+        params = {
+            'url': file_url,
+            'models': 'nudity-2.1,weapon,recreational_drug,medical,offensive-2.0,scam,face-attributes,gore-2.0,qr-content,tobacco,violence,self-harm,gambling',
+            'api_user': SIGHTENGINE_USER,
+            'api_secret': SIGHTENGINE_SECRET
+        }
+        r = requests.get('https://api.sightengine.com/1.0/check.json', params=params)
+        output = r.json()
+        if output.get("status") != "success":
+            await message.reply_text("⚠️ Error scanning image.")
+            return
 
-            params = {
-                'url': file_url,
-                'models': 'nudity-2.1,weapon,recreational_drug,medical,offensive-2.0,scam,face-attributes,gore-2.0,qr-content,tobacco,violence,self-harm,gambling',
-                'api_user': SIGHTENGINE_USER,
-                'api_secret': SIGHTENGINE_SECRET
-            }
-            r = requests.get('https://api.sightengine.com/1.0/check.json', params=params)
-            output = r.json()
-            print("Sightengine response:", json.dumps(output, indent=2))
+        # NSFW/weapon filtering
+        nudity = output.get("nudity", {})
+        weapon = output.get("weapon", {})
+        inappropriate = False
+        if any(nudity.get(k, 0) > 0.3 for k in ["sexual_activity", "sexual_display", "erotica", "very_suggestive", "suggestive", "mildly_suggestive"]):
+            inappropriate = True
+        if any(v > 0.3 for v in weapon.get("classes", {}).values()) or \
+           any(v > 0.3 for v in weapon.get("firearm_action", {}).values()) or \
+           any(v > 0.3 for v in weapon.get("firearm_type", {}).values()):
+            inappropriate = True
 
-            # Fail-safe: if status not success, exit
-            if output.get("status") != "success":
-                raise ValueError("Sightengine failed")
+        if inappropriate:
+            await message.reply_text("🚫 This image contains inappropriate content.")
+            return
 
-            # Safely extract values
-            nudity = output.get("nudity", {})
-            gore = output.get("gore", {}).get("prob", 0)
-            violence = output.get("violence", {}).get("prob", 0)
-            selfharm = output.get("self-harm", {}).get("prob", 0)
+        question_id = str(uuid4())
+        moderation_queue[question_id] = {"text": None, "photo": photo.file_id}
 
-            # Weapon detection expanded
-            weapon_section = output.get("weapon", {})
-            weapon_classes = weapon_section.get("classes", {})
-            weapon_actions = weapon_section.get("firearm_action", {})
-            weapon_types = weapon_section.get("firearm_type", {})
+        keyboard = [
+            [
+                InlineKeyboardButton("✅ Approve", callback_data=f"approve:{question_id}"),
+                InlineKeyboardButton("❌ Reject", callback_data=f"reject:{question_id}")
+            ]
+        ]
+        markup = InlineKeyboardMarkup(keyboard)
 
-            violations = []
-            if (
-                nudity.get("sexual_activity", 0) > 0.5 or
-                nudity.get("sexual_display", 0) > 0.5 or
-                nudity.get("erotica", 0) > 0.5 or
-                nudity.get("very_suggestive", 0) > 0.5 or
-                nudity.get("suggestive", 0) > 0.5 or
-                nudity.get("mildly_suggestive", 0) > 0.5
-            ):
-                violations.append("nudity")
+        for mod_id in MODERATOR_IDS:
+            await context.bot.send_photo(chat_id=mod_id, photo=photo.file_id, caption="Image submission pending approval", reply_markup=markup)
 
-            # Weapon checks
-            if any(score > 0.3 for score in weapon_classes.values()):
-                violations.append("weapon")
-            if any(score > 0.3 for score in weapon_actions.values()):
-                violations.append("weapon-action")
-            if any(score > 0.3 for score in weapon_types.values()):
-                violations.append("weapon-type")
-            
-            if gore > 0.5: violations.append("gore")
-            if violence > 0.5: violations.append("violence")
-            if selfharm > 0.5: violations.append("self-harm")
-
-            if violations:
-                await message.reply_text(f"🚫 Image blocked due to: {', '.join(violations)}")
-                return
-
-            # Passed: send to channel
-            await context.bot.send_photo(
-                chat_id=CHANNEL_ID,
-                photo=photo.file_id,
-                caption="📝 Anonymous Image Question"
-            )
-            await message.reply_text("✅ Your image has been sent anonymously!")
-
-        except Exception as e:
-            await message.reply_text("⚠️ Error scanning image. Please try again.")
-            print("Error:", e)
+        await message.reply_text("🕒 Your image has been submitted for review!")
 
     else:
         await message.reply_text("❌ Unsupported message type.")
 
-# Run bot
+async def handle_approval(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    user_id = query.from_user.id
+
+    if user_id not in MODERATOR_IDS:
+        await query.answer("❌ You’re not authorized to moderate.", show_alert=True)
+        return
+
+    action, qid = query.data.split(":")
+    if qid not in moderation_queue:
+        await query.answer("⏳ Already reviewed or expired.", show_alert=True)
+        return
+
+    data = moderation_queue.pop(qid)
+    if action == "approve":
+        if data["text"]:
+            await context.bot.send_message(chat_id=CHANNEL_ID, text=f"📝 Anonymous Question:\n\n{data['text']}")
+            await query.edit_message_text("✅ Approved and posted.")
+        elif data["photo"]:
+            await context.bot.send_photo(chat_id=CHANNEL_ID, photo=data["photo"], caption="📝 Anonymous Image Question")
+            await query.edit_message_caption("✅ Approved and posted.")
+    else:
+        if data["photo"]:
+            await query.edit_message_caption("❌ Rejected.")
+        else:
+            await query.edit_message_text("❌ Rejected.")
+
 async def main():
     profanity.load_censor_words()
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT | filters.PHOTO, handle_question))
+    app.add_handler(CallbackQueryHandler(handle_approval))
 
     await app.run_polling()
 
@@ -135,3 +148,4 @@ if __name__ == "__main__":
     import asyncio
     nest_asyncio.apply()
     asyncio.run(main())
+
