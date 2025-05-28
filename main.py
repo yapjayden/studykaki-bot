@@ -16,7 +16,8 @@ SIGHTENGINE_USER = os.environ["SIGHTENGINE_USER"]
 SIGHTENGINE_SECRET = os.environ["SIGHTENGINE_SECRET"]
 
 # List your moderator Telegram user IDs here
-MODERATOR_IDS = os.environ["MODERATOR_IDS"]  # Replace with actual IDs
+MODERATOR_IDS = os.environ["MODERATOR_IDS"].split(",")
+MODERATOR_IDS = [int(id.strip()) for id in MODERATOR_IDS]    # Replace with actual IDs
 
 moderation_queue = {}
 
