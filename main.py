@@ -51,9 +51,24 @@ async def get_ai_answer(question: str) -> str:
             config=types.GenerateContentConfig(
                 system_instruction=SYSTEM_INSTRUCTION,
                 max_output_tokens=1024,
+                # gemini-2.5 models "think" by default, and those tokens
+                # count against max_output_tokens — which can consume the
+                # whole budget and leave no answer text. Turn it off.
+                thinking_config=types.ThinkingConfig(thinking_budget=0),
             ),
         )
-        return response.text
+        answer = response.text
+        if not answer:
+            # No usable text came back — log why (e.g. MAX_TOKENS, SAFETY)
+            # so this is distinguishable from an auth/network error.
+            finish_reason = None
+            if response.candidates:
+                finish_reason = response.candidates[0].finish_reason
+            logging.error(
+                f"Gemini returned no text (finish_reason={finish_reason})"
+            )
+            return None
+        return answer
     except Exception as e:
         logging.error(f"Gemini API error: {e}")
         return None
