@@ -9,13 +9,14 @@ from telegram.ext import (
     CallbackQueryHandler, ContextTypes, filters
 )
 from better_profanity import profanity
-import anthropic
+from google import genai
+from google.genai import types
 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 CHANNEL_ID = "@studykakiSG"
 SIGHTENGINE_USER = os.environ["SIGHTENGINE_USER"]
 SIGHTENGINE_SECRET = os.environ["SIGHTENGINE_SECRET"]
-ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
+GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 
 # List your moderator Telegram user IDs here
 MODERATOR_IDS = os.environ["MODERATOR_IDS"].split(",")
@@ -28,28 +29,48 @@ ai_pending = {}
 
 logging.basicConfig(level=logging.INFO)
 
-# Use AsyncAnthropic so API calls don't block the bot event loop
-anthropic_client = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
+# Gemini client — the async interface (client.aio) keeps API calls
+# from blocking the bot event loop
+gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+
+SYSTEM_INSTRUCTION = (
+    "You are a helpful study assistant for Singaporean students. "
+    "Answer questions clearly and concisely. Use simple language suitable for students. "
+    "Where relevant, reference the Singapore curriculum (O-levels, A-levels, IB, polytechnic, university). "
+    "If the question is ambiguous, give a helpful general answer. "
+    "Keep answers under 300 words. Do not use excessive markdown — keep it readable in a Telegram message."
+)
 
 
 async def get_ai_answer(question: str) -> str:
-    """Call Claude to answer a student question (non-blocking)."""
+    """Call Gemini to answer a student question (non-blocking)."""
     try:
-        message = await anthropic_client.messages.create(
-            model="claude-opus-4-5",
-            max_tokens=1024,
-            system=(
-                "You are a helpful study assistant for Singaporean students. "
-                "Answer questions clearly and concisely. Use simple language suitable for students. "
-                "Where relevant, reference the Singapore curriculum (O-levels, A-levels, IB, polytechnic, university). "
-                "If the question is ambiguous, give a helpful general answer. "
-                "Keep answers under 300 words. Do not use excessive markdown — keep it readable in a Telegram message."
+        response = await gemini_client.aio.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=question,
+            config=types.GenerateContentConfig(
+                system_instruction=SYSTEM_INSTRUCTION,
+                max_output_tokens=1024,
+                # gemini-2.5 models "think" by default, and those tokens
+                # count against max_output_tokens — which can consume the
+                # whole budget and leave no answer text. Turn it off.
+                thinking_config=types.ThinkingConfig(thinking_budget=0),
             ),
-            messages=[{"role": "user", "content": question}]
         )
-        return message.content[0].text
+        answer = response.text
+        if not answer:
+            # No usable text came back — log why (e.g. MAX_TOKENS, SAFETY)
+            # so this is distinguishable from an auth/network error.
+            finish_reason = None
+            if response.candidates:
+                finish_reason = response.candidates[0].finish_reason
+            logging.error(
+                f"Gemini returned no text (finish_reason={finish_reason})"
+            )
+            return None
+        return answer
     except Exception as e:
-        logging.error(f"Anthropic API error: {e}")
+        logging.error(f"Gemini API error: {e}")
         return None
 
 
