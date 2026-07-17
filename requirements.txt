@@ -2,4 +2,4 @@ python-telegram-bot==20.7
 better_profanity
 nest_asyncio
 requests
-google-genai
+google-genai>=1.0.0

@@ -50,11 +50,11 @@ async def get_ai_answer(question: str) -> str:
             contents=question,
             config=types.GenerateContentConfig(
                 system_instruction=SYSTEM_INSTRUCTION,
-                # gemini-2.5 models may "think" before answering, and those
-                # tokens count against max_output_tokens. Give enough headroom
-                # that thinking can't consume the whole budget and leave no
-                # answer text (which surfaces as an empty response).
                 max_output_tokens=2048,
+                # Turn off "thinking" — unnecessary for a study Q&A bot, and
+                # it makes each answer faster and cheaper. Requires a modern
+                # google-genai (>=1.0.0), which requirements.txt now pins.
+                thinking_config=types.ThinkingConfig(thinking_budget=0),
             ),
         )
         answer = response.text
