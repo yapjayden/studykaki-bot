@@ -27,8 +27,7 @@ async def main():
             contents="What is 1+1?",
             config=types.GenerateContentConfig(
                 system_instruction="You are a helpful study assistant.",
-                max_output_tokens=1024,
-                thinking_config=types.ThinkingConfig(thinking_budget=0),
+                max_output_tokens=2048,
             ),
         )
     except Exception:

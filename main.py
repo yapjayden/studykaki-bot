@@ -50,11 +50,11 @@ async def get_ai_answer(question: str) -> str:
             contents=question,
             config=types.GenerateContentConfig(
                 system_instruction=SYSTEM_INSTRUCTION,
-                max_output_tokens=1024,
-                # gemini-2.5 models "think" by default, and those tokens
-                # count against max_output_tokens — which can consume the
-                # whole budget and leave no answer text. Turn it off.
-                thinking_config=types.ThinkingConfig(thinking_budget=0),
+                # gemini-2.5 models may "think" before answering, and those
+                # tokens count against max_output_tokens. Give enough headroom
+                # that thinking can't consume the whole budget and leave no
+                # answer text (which surfaces as an empty response).
+                max_output_tokens=2048,
             ),
         )
         answer = response.text
