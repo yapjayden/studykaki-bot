@@ -11,6 +11,11 @@ from telegram.ext import (
 from better_profanity import profanity
 from google import genai
 from google.genai import types
+from dotenv import load_dotenv
+
+# Load variables from a local .env file if one exists. In production the
+# host provides real environment variables and this is a harmless no-op.
+load_dotenv()
 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 CHANNEL_ID = "@studykakiSG"
